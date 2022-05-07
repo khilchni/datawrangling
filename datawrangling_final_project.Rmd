@@ -1,0 +1,197 @@
+---
+title: "data wrangling assignment"
+author: "Nikhil Chepena, Rohin Sri Kumar"
+date: "10/04/2022"
+output: html_document
+---
+
+Loading the required packages
+```{r setup, include=TRUE}
+knitr::opts_chunk$set(echo = FALSE)
+library(dplyr)
+library(tidytext)
+library(readr)
+library(ggplot2)
+library(rvest)
+library(tm)
+library(wordcloud)
+library(syuzhet)
+library(wordcloud2)
+library(corrplot)
+library(textdata)
+library(stringr)
+library(SnowballC)
+```
+
+
+We are retrieving required data from the wikipidea and displaying the top of the retrieved data
+
+```{r cars}
+squid <- read_html("https://en.wikipedia.org/wiki/Squid_Game")
+
+stidy <- squid %>%html_nodes("p")%>%html_text()
+
+head(stidy)
+ 
+```
+
+First we have replaced some of the special character in the above data.
+Then we created a corpus, corpus is helpful to apply textmining packages. 
+With the help of tm_map() function we have cleaned the obtained data by first converting the text to lowercase and removing numerical words, punctuations, stopwords, whitespcaes.  we also printed the data at every step for verifying whether the data is clean or not. 
+Lastly we also reduced the words to root form by stemming the text. This was done by using the snowballC package.
+
+```{r pressure, echo=FALSE, warning=FALSE}
+stidy_edited <- str_replace_all(string=stidy, pattern= "[&â€¦™ðŸ¥$£]" , replacement= " ")
+squid_doc <- Corpus(VectorSource(stidy_edited))
+squid_doc <- tm_map(squid_doc,tolower)
+inspect(squid_doc[1:3])
+squid_doc <- tm_map(squid_doc,removeNumbers)
+inspect(squid_doc[1:3])
+squid_doc <- tm_map(squid_doc,removeWords,stopwords("english"))
+inspect(squid_doc[1:3])
+squid_doc <- tm_map(squid_doc,removePunctuation)
+inspect(squid_doc[1:3])
+squid_doc <- tm_map(squid_doc,stripWhitespace)
+inspect(squid_doc[1:3])
+
+squid_doc <- tm_map(squid_doc, stemDocument)
+
+```
+
+we then used the term document matrix function to count the number of occurrence of each words.
+displayed the top 20 frequent words.
+
+```{r }
+dtm <- TermDocumentMatrix(squid_doc)
+
+m <- as.matrix(dtm)
+v <- sort(rowSums(m),decreasing = TRUE)
+d <- data.frame(frequency=v)
+d <- data.frame(word=names(v),frequency=v)
+d_1 <- as_tibble(d)
+head(d_1,20)
+```
+
+
+using the ggplot we then try to visually represent the top 10 frequently used words.
+```{r }
+
+ad <- d_1[1:10,]
+
+ggplot(ad)+
+  geom_bar(mapping = aes(x = frequency, y = word,fill=word), stat = "identity")+ggtitle("10 Most Frequent words written in article")+xlab("FREQUENCY")+ylab("WORDS")+theme(legend.text = element_text(colour="orange", size=10, 
+                                     face="bold"))+labs(fill="WORDS")
+
+```
+
+with the wordcloud package we generated a wordcloud plot and also a wordcloud html widget.
+
+```{r }
+
+set.seed(1234)
+wordcloud(words=d_1$word,freq=d_1$frequency,min.freq=5,max.words=100,random.order=FALSE,rot.per=0.50,colors=brewer.pal(8,"Dark2"))
+
+
+colnames(d) <- c('word', 'freq')
+wordcloud2(d,size = 0.7,
+           shape = 'triangle',
+           rotateRatio = 0.5,
+           minSize = 1)
+
+```
+to find correlation between the words i.e which words occur most commonly in association with the given word, we used the find association function to accomplish this. 
+we have set the correlation limit to 0.55
+we also used the find freq terms function to get all the words that occur atleast 10times
+
+```{r}
+findFreqTerms(dtm, lowfreq = 10)
+findAssocs(dtm, terms = "game", corlimit =0.55 )
+findAssocs(dtm, terms = "squid", corlimit = 0.55)
+findAssocs(dtm, terms = "netflix", corlimit = 0.55 )
+
+```
+
+We are using syuzhet, bing ,afinn , nrc lexicons for this project.
+for the syuzhet, bing, afinn we are using the get_sentiment function.
+These 3 methods have different scales for sentiment analysis.
+
+we have appllied these three methods to the data and also displayed the vectors and summary statistics of each method.
+
+```{r}
+syuzhet_vector <- get_sentiment(stidy,method="syuzhet")
+head(syuzhet_vector)
+summary(syuzhet_vector)
+
+bing_vector <- get_sentiment(stidy,method="bing")
+head(bing_vector)
+summary(bing_vector)
+
+afinn_vector <- get_sentiment(stidy,method = "afinn")
+head(afinn_vector)
+summary(afinn_vector)
+
+
+```
+
+since these three method uses different scales, we need a common scale to have a better understanding to make assumptions.
+so we have used the inbuilt r bind function to bind rows of the three vectors and then to get the overall emotional valence we have also did the sum of the vector.
+
+```{r}
+rbind(
+  sign(head(syuzhet_vector)),
+  sign(head(bing_vector)),
+  sign(head(afinn_vector))
+)
+
+sum(syuzhet_vector)
+sum(bing_vector)
+sum(afinn_vector)
+```
+
+we tried using nrc sentiment lexicons to get a data frame with rows representing sentences for the data 10 columns consists of the 8 emotions and 2 sentiments. 
+
+```{r}
+vector.nrc <- get_nrc_sentiment(stidy)
+v.nrc <- as_tibble(vector.nrc)
+v.nrc
+``` 
+
+We have then created a tibble with the total count associated with each emotion.
+
+```{r}
+
+df.nrc <- data.frame(t(vector.nrc))
+
+td_new1 <- data.frame(rowSums(df.nrc[2:44]))
+
+names(td_new1)[1] <- "count"
+td_new1 <- cbind("sentiment"=rownames(td_new1),td_new1)
+rownames(td_new1) <- NULL
+td_new <- as_tibble(td_new1)
+td_new2 <- td_new[1:8,]
+td_new
+```
+
+we then created a bar plot with all the emotions using ggplot.
+
+```{r}
+p<-ggplot(data=td_new2, aes(x=sentiment, y=count,fill=sentiment)) + ggtitle("squid sentiments") +
+  geom_bar(stat="identity")+theme(legend.text = element_text(colour="orange", size=10, 
+                                     face="bold"))
+p
+
+```
+
+Inorder to get a better understanding we have created a barplot with percentage of each emotion. This helps in understanding the the percentage of words which are associated with each emotion.
+```{r}
+barplot(
+  sort(colSums(prop.table(v.nrc[, 1:8]))), 
+  horiz = TRUE, 
+  cex.names = 0.7, 
+  las = 1, 
+  main = "Emotions in Squid Games text", xlab="Percentage"
+  ) 
+```
+
+
+
